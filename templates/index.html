@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>웹툰 완결 알리미</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>
+        body {
+            font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        .tab-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .tab-button.active {
+            color: #ffffff;
+            background-color: #4f46e5;
+        }
+        .webtoon-row {
+            border-bottom: 1px solid #2d2d2d;
+            transition: background-color 0.2s ease;
+        }
+        .webtoon-row:hover {
+            background-color: #1e1e1e;
+        }
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+        }
+        .modal-content {
+            background-color: #2a2a2a;
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- 헤더 -->
+    <header class="bg-black/50 backdrop-blur-lg py-4 shadow-lg sticky top-0 z-30 border-b border-gray-800">
+        <div class="container mx-auto px-4 flex justify-between items-center">
+            <a href="#" id="homeButton" class="flex items-center gap-3 cursor-pointer">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-400"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                <h1 class="text-xl md:text-2xl font-black text-white tracking-tighter">완결 알리미</h1>
+            </a>
+            <input type="text" id="searchInput" placeholder="전체 웹툰 검색..." class="w-1/2 md:w-1/3 p-2 rounded-lg bg-[#2a2a2a] border border-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white transition-all duration-300">
+        </div>
+    </header>
+
+    <!-- 메인 콘텐츠 -->
+    <main class="container mx-auto p-4 md:p-8">
+        <div id="tabContainer" class="mb-6 overflow-x-auto">
+            <div class="flex space-x-2 border-b border-gray-700">
+                <!-- 탭 버튼이 여기에 동적으로 추가됩니다 -->
+            </div>
+        </div>
+        
+        <div id="webtoonListContainer">
+            <!-- 웹툰 목록이 여기에 동적으로 표시됩니다 -->
+        </div>
+
+        <div id="statusIndicator" class="text-center py-20">
+            <!-- 상태 메시지가 여기에 표시됩니다 -->
+        </div>
+    </main>
+    
+    <!-- 개선 의견 섹션 -->
+    <section class="container mx-auto p-4 md:p-8 mt-12">
+        <div class="bg-[#1e1e1e] p-8 rounded-lg border border-gray-800 text-center">
+            <h2 class="text-2xl font-bold mb-4 text-white">서비스 개선에 참여해주세요!</h2>
+            <p class="text-gray-400 mb-8">여러분의 소중한 의견이 더 나은 서비스를 만듭니다.</p>
+            <a href="https://forms.gle/HHhRRxZdE8g4x6nm9" target="_blank" class="inline-block bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-8 rounded-lg transition-colors">
+                개선 의견 남기기
+            </a>
+        </div>
+    </section>
+
+    <!-- 푸터 -->
+    <footer class="text-center py-8 mt-4 border-t border-gray-800">
+        <p class="text-gray-500 text-sm">&copy; 2025 Webtoon Notifier. All rights reserved.</p>
+    </footer>
+
+    <!-- [수정됨] 구독 모달 구조 변경 -->
+    <div id="subscribeModal" class="fixed inset-0 flex items-center justify-center z-50 hidden">
+        <!-- 블러 및 어두운 배경 효과를 위한 별도 요소 -->
+        <div class="absolute inset-0 modal-backdrop"></div>
+        
+        <!-- 실제 모달 콘텐츠 (배경 위에 위치) -->
+        <div id="modalContent" class="relative z-10 modal-content p-8 rounded-xl w-full max-w-md mx-4 transform transition-all duration-300 scale-95 opacity-0">
+            <h2 class="text-2xl font-bold mb-2 text-white">완결 알림 받기</h2>
+            <p id="modalWebtoonTitle" class="mb-4 text-gray-400"></p>
+            
+            <div id="modalWebtoonLinkContainer" class="mb-6"></div>
+
+            <!-- 이메일 입력 필드와 에러 메시지 영역 -->
+            <div class="mb-4">
+                <input type="email" id="emailInput" placeholder="알림받을 이메일 주소" class="w-full p-3 rounded-md bg-[#3a3a3c] border border-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white">
+                <p id="emailError" class="text-red-400 text-sm mt-1 h-5"></p> <!-- 에러 메시지를 표시할 공간 -->
+            </div>
+            
+            <div class="flex justify-end gap-4">
+                <button id="cancelButton" class="px-6 py-2 rounded-md bg-gray-600 hover:bg-gray-500 text-white font-semibold transition-colors">취소</button>
+                <button id="subscribeButton" class="px-6 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors">구독하기</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="toast" class="fixed bottom-10 right-10 px-6 py-3 rounded-lg shadow-xl text-white transform translate-y-20 opacity-0 transition-all duration-500 ease-in-out"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabContainer = document.getElementById('tabContainer').querySelector('.flex');
+            const webtoonListContainer = document.getElementById('webtoonListContainer');
+            const statusIndicator = document.getElementById('statusIndicator');
+            const searchInput = document.getElementById('searchInput');
+            const homeButton = document.getElementById('homeButton');
+            const modal = document.getElementById('subscribeModal');
+            // [수정됨] 모달 콘텐츠를 ID로 직접 선택
+            const modalContent = document.getElementById('modalContent');
+            const modalWebtoonTitle = document.getElementById('modalWebtoonTitle');
+            const modalWebtoonLinkContainer = document.getElementById('modalWebtoonLinkContainer');
+            const emailInput = document.getElementById('emailInput');
+            const emailError = document.getElementById('emailError');
+            const subscribeButton = document.getElementById('subscribeButton');
+            const cancelButton = document.getElementById('cancelButton');
+            const toast = document.getElementById('toast');
+
+            let webtoonData = {};
+            let currentTitleId = null;
+            let activeTab = 'mon';
+
+            const TABS = {
+                mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일', daily: '매일+', completed: '완결'
+            };
+
+            // --- 이메일 유효성 검사 함수 (프론트엔드) ---
+            function validateEmail(email) {
+                const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                return re.test(String(email).toLowerCase());
+            }
+
+            function showStatus(message, isError = false) {
+                webtoonListContainer.innerHTML = '';
+                statusIndicator.innerHTML = `<p class="text-xl ${isError ? 'text-red-400' : 'text-gray-500'}">${message}</p>`;
+            }
+
+            async function fetchWebtoons() {
+                showStatus('웹툰 목록을 불러오는 중...');
+                try {
+                    const response = await fetch('/api/webtoons');
+                    if (!response.ok) throw new Error('서버 응답 오류');
+                    webtoonData = await response.json();
+                    renderTabs();
+                    renderWebtoonList();
+                } catch (error) {
+                    showStatus('웹툰 목록 로딩 실패. 백엔드 서버를 확인해주세요.', true);
+                    console.error('Fetch error:', error);
+                }
+            }
+
+            function renderTabs() {
+                tabContainer.innerHTML = '';
+                for (const [key, value] of Object.entries(TABS)) {
+                    const button = document.createElement('button');
+                    button.className = `tab-button px-4 py-2 text-sm font-bold rounded-t-lg whitespace-nowrap ${activeTab === key ? 'active' : 'text-gray-400 hover:bg-gray-800'}`;
+                    button.textContent = value;
+                    button.dataset.tab = key;
+                    button.addEventListener('click', () => {
+                        activeTab = key;
+                        searchInput.value = '';
+                        renderTabs();
+                        renderWebtoonList();
+                    });
+                    tabContainer.appendChild(button);
+                }
+            }
+
+            function renderWebtoonList() {
+                const searchTerm = searchInput.value.toLowerCase();
+                let listToRender;
+
+                if (searchTerm) {
+                    const allOngoing = Object.values(webtoonData.ongoing).flat();
+                    const allCompleted = webtoonData.completed || [];
+                    const fullList = [...allOngoing, ...allCompleted];
+                    const uniqueIds = new Set();
+                    const uniqueList = fullList.filter(webtoon => {
+                        if (uniqueIds.has(webtoon.title_id)) {
+                            return false;
+                        } else {
+                            uniqueIds.add(webtoon.title_id);
+                            return true;
+                        }
+                    });
+                    listToRender = uniqueList.filter(webtoon => 
+                        webtoon.title_text.toLowerCase().includes(searchTerm)
+                    );
+                    tabContainer.style.display = 'none';
+                } else {
+                    listToRender = activeTab === 'completed' ? webtoonData.completed : webtoonData.ongoing[activeTab];
+                    tabContainer.style.display = 'flex';
+                }
+                
+                if (!listToRender || listToRender.length === 0) {
+                    const message = searchTerm ? '검색 결과가 없습니다.' : `'${TABS[activeTab]}' 요일의 웹툰이 없습니다.`;
+                    showStatus(message);
+                    return;
+                }
+                
+                statusIndicator.innerHTML = '';
+                webtoonListContainer.innerHTML = '';
+
+                listToRender.forEach(webtoon => {
+                    const row = document.createElement('div');
+                    row.className = 'webtoon-row flex items-center justify-between p-4 cursor-pointer';
+                    
+                    const statusBadgeColor = webtoon.status === '완결' ? 'bg-green-600' : 'bg-blue-600';
+
+                    row.innerHTML = `
+                        <div class="flex-grow min-w-0">
+                            <p class="font-bold text-white truncate">${webtoon.title_text}</p>
+                            <p class="text-sm text-gray-400 truncate">${webtoon.author}</p>
+                        </div>
+                        <div class="flex items-center space-x-4 ml-4 flex-shrink-0">
+                           <span class="text-xs font-semibold text-white px-3 py-1 rounded-full ${statusBadgeColor}">${webtoon.status}</span>
+                        </div>
+                    `;
+                    
+                    row.addEventListener('click', () => {
+                        openModal(webtoon.title_id, webtoon.title_text);
+                    });
+                    
+                    webtoonListContainer.appendChild(row);
+                });
+            }
+
+            let searchTimeout;
+            searchInput.addEventListener('input', () => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    renderWebtoonList();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }, 300);
+            });
+            
+            homeButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                window.location.reload();
+            });
+            
+            function openModal(titleId, titleText) {
+                currentTitleId = titleId;
+                modalWebtoonTitle.textContent = `'${titleText}'`;
+                
+                const webtoonLink = `https://comic.naver.com/webtoon/list?titleId=${titleId}`;
+                modalWebtoonLinkContainer.innerHTML = `
+                    <a href="${webtoonLink}" target="_blank" class="inline-flex items-center gap-2 text-indigo-400 hover:text-indigo-300 transition-colors">
+                        <span>웹툰 바로가기</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    </a>
+                `;
+
+                modal.classList.remove('hidden');
+                setTimeout(() => { modalContent.classList.remove('scale-95', 'opacity-0'); }, 10);
+            }
+
+            function closeModal() {
+                modalContent.classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                    emailError.textContent = ''; 
+                    currentTitleId = null;
+                }, 300);
+            }
+            
+            async function handleSubscription() {
+                const email = emailInput.value;
+                // '구독하기' 버튼 클릭 시에만 검증
+                if (!validateEmail(email)) {
+                    emailError.textContent = '이메일이 올바른지 확인해주세요.';
+                    emailInput.focus();
+                    emailInput.classList.add('animate-shake');
+                    setTimeout(() => emailInput.classList.remove('animate-shake'), 500);
+                    return;
+                }
+
+                // 검증에 성공하면 에러 메시지 초기화
+                emailError.textContent = '';
+
+                try {
+                    const response = await fetch('/api/subscribe', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: email, titleId: currentTitleId }),
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.message || '구독 처리 중 오류가 발생했습니다.');
+                    
+                    showToast('구독이 완료되었습니다! 완결되면 알려드릴게요.', 'success');
+                    localStorage.setItem('userEmail', email);
+                    closeModal();
+
+                } catch (error) {
+                    showToast(error.message, 'error');
+                }
+            }
+            
+            function showToast(message, type = 'success') {
+                toast.textContent = message;
+                toast.className = `fixed bottom-10 right-10 px-6 py-3 rounded-lg shadow-xl text-white transform transition-all duration-500 ease-in-out ${type === 'success' ? 'bg-indigo-600' : 'bg-red-600'}`;
+                toast.classList.remove('opacity-0', 'translate-y-20');
+                setTimeout(() => { toast.classList.add('opacity-0', 'translate-y-20'); }, 3000);
+            }
+
+            // 로컬 스토리지에서 이메일 불러오기
+            emailInput.value = localStorage.getItem('userEmail') || '';
+
+            // 키보드 Enter 키로 구독하기
+            emailInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    handleSubscription();
+                }
+            });
+
+            // 애니메이션을 위한 CSS 추가
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes shake {
+                    10%, 90% { transform: translateX(-1px); }
+                    20%, 80% { transform: translateX(2px); }
+                    30%, 50%, 70% { transform: translateX(-4px); }
+                    40%, 60% { transform: translateX(4px); }
+                }
+                .animate-shake {
+                    animation: shake 0.5s ease-in-out;
+                }
+            `;
+            document.head.appendChild(style);
+
+
+            cancelButton.addEventListener('click', closeModal);
+            subscribeButton.addEventListener('click', handleSubscription);
+            // [수정됨] 모달 외부 클릭 시 닫기 (콘텐츠가 아닌 부분을 클릭했을 때)
+            modal.addEventListener('click', (e) => { 
+                if (e.target === modal) {
+                    closeModal();
+                }
+            });
+            
+            fetchWebtoons();
+        });
+    </script>
+</body>
+</html>
