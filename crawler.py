@@ -1,6 +1,6 @@
 # =====================================================================================
 #  파일: crawler.py (데이터 수집 및 완결 감지기)
-#  - [최종 수정] 'dailyPlus' API를 추가로 호출하여, 누락되었던 '매일+' 웹툰을 모두 수집합니다.
+#  - [개선됨] 모든 작업 완료 후, 관리자에게 일일 작업 결과 보고서를 이메일로 발송합니다.
 # =====================================================================================
 
 # --- 1. 필요한 라이브러리 불러오기 ---
@@ -11,6 +11,8 @@ from email.mime.text import MIMEText
 import requests
 import time
 import random
+from datetime import datetime
+import traceback
 
 DATABASE = 'webtoons.db'
 
@@ -53,21 +55,17 @@ def get_webtoons_from_api(api_url):
         print(f"❌ API 호출 중 오류 발생: {e}")
         return []
 
-def collect_new_webtoons():
+def collect_new_webtoons(cursor):
     """요일별 웹툰 API를 호출하여 DB에 새로운 웹툰을 추가합니다."""
     print("=== 신규 웹툰 수집 시작 (API 방식) ===")
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
-
-    # [수정됨] 'dailyPlus' 키를 추가하여 모든 '매일+' 웹툰을 수집합니다.
+    
     weekdays = {'mon': '월', 'tue': '화', 'wed': '수', 'thu': '목', 'fri': '금', 'sat': '토', 'sun': '일', 'daily': '매일+', 'dailyPlus': '매일+'}
-    all_webtoons_count = 0
+    new_webtoons_count = 0
 
     for day_eng, day_kor in weekdays.items():
         api_url = f"https://comic.naver.com/api/webtoon/titlelist/weekday?week={day_eng}"
         print(f"'{day_kor}' ({day_eng}) 웹툰 목록 가져오는 중...")
         webtoons_for_day = get_webtoons_from_api(api_url)
-        all_webtoons_count += len(webtoons_for_day)
         
         for webtoon in webtoons_for_day:
             title_id = webtoon.get('titleId')
@@ -75,24 +73,22 @@ def collect_new_webtoons():
             author = webtoon.get('author')
             
             if title_id and title_text:
-                # 'daily'와 'dailyPlus' 모두 '매일+'이라는 한글 요일로 저장합니다.
-                cursor.execute("""
-                INSERT OR IGNORE INTO webtoons (title_id, title_text, author, weekday, status) 
-                VALUES (?, ?, ?, ?, ?)
-                """, (title_id, title_text, author, day_kor, '연재중'))
+                cursor.execute("SELECT 1 FROM webtoons WHERE title_id = ?", (title_id,))
+                if cursor.fetchone() is None:
+                    cursor.execute("""
+                    INSERT INTO webtoons (title_id, title_text, author, weekday, status) 
+                    VALUES (?, ?, ?, ?, ?)
+                    """, (title_id, title_text, author, day_kor, '연재중'))
+                    new_webtoons_count += 1
         
         time.sleep(random.uniform(0.5, 1.5))
 
-    print(f"총 {all_webtoons_count}개의 웹툰 아이템을 확인했습니다.")
-    conn.commit()
-    conn.close()
     print("=== 신규 웹툰 수집 완료 ===")
+    return new_webtoons_count
 
-# --- 4. 완결 감지 및 알림 발송 함수 (변경 없음) ---
-def detect_completed_webtoons():
+# --- 4. 완결 감지 및 알림 발송 함수 ---
+def detect_completed_webtoons(cursor):
     print("=== 완결 웹툰 감지 시작 (API 방식) ===")
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
     
     completed_api_url = "https://comic.naver.com/api/webtoon/titlelist/finished"
     completed_webtoons = get_webtoons_from_api(completed_api_url)
@@ -103,24 +99,30 @@ def detect_completed_webtoons():
     
     newly_completed_ids = db_ongoing_ids.intersection(real_completed_ids)
     
+    completed_details = []
     if newly_completed_ids:
         print(f"새로운 완결 웹툰 {len(newly_completed_ids)}개 발견!")
         for title_id in newly_completed_ids:
             cursor.execute("UPDATE webtoons SET status = '완결' WHERE title_id = ?", (title_id,))
-            print(f"  - ID {title_id} 상태를 '완결'로 업데이트.")
-            send_completion_notification(cursor, title_id)
+            
+            cursor.execute("SELECT title_text FROM webtoons WHERE title_id = ?", (title_id,))
+            title_text = cursor.fetchone()[0]
+            
+            subscribers_count = send_completion_notification(cursor, title_id, title_text)
+            completed_details.append(f"- {title_text} (ID:{title_id}) / {subscribers_count}명에게 알림 발송")
+            print(f"  - ID {title_id} ('{title_text}') 상태를 '완결'로 업데이트.")
     else:
         print("새롭게 완결된 웹툰이 없습니다.")
-    conn.commit()
-    conn.close()
+        
     print("=== 완결 웹툰 감지 완료 ===")
+    return completed_details
 
 def send_email(recipient_email, subject, body):
     sender_email = os.getenv('EMAIL_ADDRESS')
     sender_password = os.getenv('EMAIL_PASSWORD')
     if not sender_email or not sender_password:
         print("오류: 이메일 발송을 위한 환경 변수가 설정되지 않았습니다.")
-        return
+        return False
     msg = MIMEText(body, _charset='utf-8')
     msg['Subject'] = subject
     msg['From'] = sender_email
@@ -131,14 +133,15 @@ def send_email(recipient_email, subject, body):
             smtp_server.login(sender_email, sender_password)
             smtp_server.sendmail(sender_email, recipient_email, msg.as_string())
         print(f"성공: {recipient_email}에게 이메일 발송 완료.")
+        return True
     except Exception as e:
         print(f"오류: {recipient_email}에게 이메일 발송 실패 - {e}")
+        return False
 
-def send_completion_notification(cursor, title_id):
+def send_completion_notification(cursor, title_id, title_text):
     cursor.execute("SELECT email FROM subscriptions WHERE title_id = ?", (title_id,))
     subscribers = [row[0] for row in cursor.fetchall()]
-    cursor.execute("SELECT title_text FROM webtoons WHERE title_id = ?", (title_id,))
-    title_text = cursor.fetchone()[0]
+    
     print(f"--- '{title_text}'(ID:{title_id}) 완결 알림 발송 대상 ---")
     if subscribers:
         subject = f"웹툰 완결 알림: '{title_text}'가 완결되었습니다!"
@@ -154,9 +157,76 @@ def send_completion_notification(cursor, title_id):
     else:
         print("  -> 구독자가 없습니다.")
     print("-------------------------------------------------")
+    return len(subscribers)
 
-# --- 5. 메인 실행 블록 ---
+# --- [신규] 5. 관리자에게 상태 보고서 발송 함수 ---
+def send_admin_report(report_data):
+    # 보고서를 받을 관리자 이메일 주소를 환경변수에서 가져옵니다.
+    # GitHub Secrets에 ADMIN_EMAIL 로 당신의 개인 이메일을 추가해야 합니다.
+    admin_email = os.getenv('ADMIN_EMAIL')
+    if not admin_email:
+        print("경고: 보고서를 수신할 ADMIN_EMAIL 환경 변수가 설정되지 않았습니다.")
+        return
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    if report_data['status'] == '성공':
+        subject = f"✅ [성공] 웹툰 알리미 일일 보고서 ({now})"
+        body = f"""
+안녕하세요, 관리자님.
+웹툰 알리미 자동화 작업이 성공적으로 완료되었습니다.
+
+- 작업 시간: {now}
+- 실행 시간: {report_data['duration']:.2f}초
+- 신규 등록 웹툰: {report_data['new_webtoons']}개
+
+[금일 완결 처리된 웹툰]
+"""
+        if report_data['completed_details']:
+            body += "\n".join(report_data['completed_details'])
+        else:
+            body += "없음"
+
+    else: # 실패 시
+        subject = f"❌ [실패] 웹툰 알리미 자동화 작업 오류 보고서 ({now})"
+        body = f"""
+안녕하세요, 관리자님.
+웹툰 알리미 자동화 작업 중 오류가 발생했습니다.
+
+- 작업 시간: {now}
+- 오류 내용:
+{report_data['error_message']}
+
+GitHub Actions 로그를 확인해주세요.
+"""
+
+    send_email(admin_email, subject, body)
+
+
+# --- 6. 메인 실행 블록 ---
 if __name__ == '__main__':
-    setup_database()
-    collect_new_webtoons()
-    detect_completed_webtoons()
+    start_time = time.time()
+    report = {'status': '성공'}
+
+    try:
+        setup_database()
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+
+        report['new_webtoons'] = collect_new_webtoons(cursor)
+        report['completed_details'] = detect_completed_webtoons(cursor)
+        
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        # 어떤 에러든 잡아서 보고서에 기록
+        print(f"치명적 오류 발생: {e}")
+        report['status'] = '실패'
+        report['error_message'] = traceback.format_exc()
+
+    finally:
+        # 성공하든 실패하든 항상 보고서 발송
+        end_time = time.time()
+        report['duration'] = end_time - start_time
+        send_admin_report(report)

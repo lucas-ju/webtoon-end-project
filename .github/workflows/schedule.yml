@@ -1,7 +1,7 @@
 name: Daily Webtoon Crawler
 
 on:
-  # [개선됨] main 브랜치에 코드가 push 될 때마다 즉시 실행 (테스트용)
+  # main 브랜치에 코드가 push 될 때마다 즉시 실행 (테스트용)
   push:
     branches:
       - main
@@ -15,7 +15,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # [개선됨] 자동화 로봇에게 코드 쓰기 권한 부여
+    # 자동화 로봇에게 코드 쓰기 권한을 명시적으로 부여합니다.
     permissions:
       contents: write
     steps:
@@ -36,6 +36,7 @@ jobs:
       env:
         EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
         EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
       run: python crawler.py
 
     - name: Commit and Push database
