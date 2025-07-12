@@ -88,6 +88,7 @@ def collect_new_webtoons(cursor):
 
 # --- 4. 완결 감지 및 알림 발송 함수 ---
 def detect_completed_webtoons(cursor):
+    """완결 웹툰을 감지하고, 알림을 발송한 뒤, 보고서용 상세 정보와 총 알림 인원을 반환합니다."""
     print("=== 완결 웹툰 감지 시작 (API 방식) ===")
     
     completed_api_url = "https://comic.naver.com/api/webtoon/titlelist/finished"
@@ -100,6 +101,7 @@ def detect_completed_webtoons(cursor):
     newly_completed_ids = db_ongoing_ids.intersection(real_completed_ids)
     
     completed_details = []
+    total_notified_users = 0 
     if newly_completed_ids:
         print(f"새로운 완결 웹툰 {len(newly_completed_ids)}개 발견!")
         for title_id in newly_completed_ids:
@@ -109,13 +111,15 @@ def detect_completed_webtoons(cursor):
             title_text = cursor.fetchone()[0]
             
             subscribers_count = send_completion_notification(cursor, title_id, title_text)
-            completed_details.append(f"- {title_text} (ID:{title_id}) / {subscribers_count}명에게 알림 발송")
+            total_notified_users += subscribers_count 
+            
+            completed_details.append(f"- '{title_text}' (ID:{title_id}) : {subscribers_count}명에게 알림 발송")
             print(f"  - ID {title_id} ('{title_text}') 상태를 '완결'로 업데이트.")
     else:
         print("새롭게 완결된 웹툰이 없습니다.")
         
     print("=== 완결 웹툰 감지 완료 ===")
-    return completed_details
+    return completed_details, total_notified_users 
 
 def send_email(recipient_email, subject, body):
     sender_email = os.getenv('EMAIL_ADDRESS')
@@ -159,10 +163,8 @@ def send_completion_notification(cursor, title_id, title_text):
     print("-------------------------------------------------")
     return len(subscribers)
 
-# --- [신규] 5. 관리자에게 상태 보고서 발송 함수 ---
+# --- 5. 관리자에게 상태 보고서 발송 함수 ---
 def send_admin_report(report_data):
-    # 보고서를 받을 관리자 이메일 주소를 환경변수에서 가져옵니다.
-    # GitHub Secrets에 ADMIN_EMAIL 로 당신의 개인 이메일을 추가해야 합니다.
     admin_email = os.getenv('ADMIN_EMAIL')
     if not admin_email:
         print("경고: 보고서를 수신할 ADMIN_EMAIL 환경 변수가 설정되지 않았습니다.")
@@ -172,6 +174,7 @@ def send_admin_report(report_data):
     
     if report_data['status'] == '성공':
         subject = f"✅ [성공] 웹툰 알리미 일일 보고서 ({now})"
+        # [수정됨] 보고서 내용에 총 알림 인원 추가
         body = f"""
 안녕하세요, 관리자님.
 웹툰 알리미 자동화 작업이 성공적으로 완료되었습니다.
@@ -179,8 +182,9 @@ def send_admin_report(report_data):
 - 작업 시간: {now}
 - 실행 시간: {report_data['duration']:.2f}초
 - 신규 등록 웹툰: {report_data['new_webtoons']}개
+- 총 알림 발송 인원: {report_data.get('total_notified', 0)}명
 
-[금일 완결 처리된 웹툰]
+[금일 완결 처리 및 알림 발송 내역]
 """
         if report_data['completed_details']:
             body += "\n".join(report_data['completed_details'])
@@ -206,6 +210,7 @@ GitHub Actions 로그를 확인해주세요.
 # --- 6. 메인 실행 블록 ---
 if __name__ == '__main__':
     start_time = time.time()
+    # [수정됨] 보고서 딕셔너리 초기화
     report = {'status': '성공'}
 
     try:
@@ -214,7 +219,10 @@ if __name__ == '__main__':
         cursor = conn.cursor()
 
         report['new_webtoons'] = collect_new_webtoons(cursor)
-        report['completed_details'] = detect_completed_webtoons(cursor)
+        # [수정됨] 반환값을 두 개 받도록 변경
+        completed_details, total_notified = detect_completed_webtoons(cursor)
+        report['completed_details'] = completed_details
+        report['total_notified'] = total_notified
         
         conn.commit()
         conn.close()
