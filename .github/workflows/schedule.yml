@@ -1,21 +1,16 @@
 name: Daily Webtoon Crawler
 
 on:
-  # main 브랜치에 코드가 push 될 때마다 즉시 실행 (테스트용)
   push:
     branches:
       - main
-  # 매일 정해진 시간에 실행
   schedule:
-    # 한국 시간 매일 오후 10시는 UTC 기준 13시입니다.
     - cron: '0 13 * * *'
-  # 수동으로 실행할 수 있도록 버튼 생성
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    # 자동화 로봇(Action)에게 저장소에 코드를 쓸 수 있는 권한을 명시적으로 부여합니다.
     permissions:
       contents: write
     steps:
@@ -32,7 +27,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    # [핵심] 크롤러를 실행하여 webtoons.db를 생성하고 데이터를 채웁니다.
     - name: Run Crawler to create/update database
       env:
         EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
@@ -40,13 +34,13 @@ jobs:
         ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
       run: python crawler.py
 
-    # [핵심] 변경된 webtoons.db 파일을 저장소에 다시 커밋하고 푸시합니다.
     - name: Commit and Push database
       run: |
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        git add webtoons.db
-        # git status를 통해 변경 사항이 있을 때만 커밋하도록 조건을 명확히 합니다.
+        # -f 옵션으로 .gitignore를 무시하고 강제로 추가
+        git add -f webtoons.db
+        # 변경 사항이 있을 때만 커밋
         if ! git diff --staged --quiet; then
           git commit -m "Update webtoon database"
           git push
