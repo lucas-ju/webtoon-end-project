@@ -15,7 +15,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # 자동화 로봇에게 코드 쓰기 권한을 명시적으로 부여합니다.
+    # 자동화 로봇(Action)에게 저장소에 코드를 쓸 수 있는 권한을 명시적으로 부여합니다.
     permissions:
       contents: write
     steps:
@@ -32,17 +32,24 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Run Crawler
+    # [핵심] 크롤러를 실행하여 webtoons.db를 생성하고 데이터를 채웁니다.
+    - name: Run Crawler to create/update database
       env:
         EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
         EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
       run: python crawler.py
 
+    # [핵심] 변경된 webtoons.db 파일을 저장소에 다시 커밋하고 푸시합니다.
     - name: Commit and Push database
       run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
         git add webtoons.db
-        # 변경사항이 있을 때만 커밋하고 푸시합니다.
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update webtoon database" && git push)
+        # git status를 통해 변경 사항이 있을 때만 커밋하도록 조건을 명확히 합니다.
+        if ! git diff --staged --quiet; then
+          git commit -m "Update webtoon database"
+          git push
+        else
+          echo "No changes to commit."
+        fi
